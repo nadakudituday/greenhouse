@@ -1,0 +1,186 @@
+//Serial Receiver Code
+#include <WiFi.h>
+#include <PubSubClient.h>
+
+// Replace with your network and MQTT broker credentials
+const char *ssid = "Pixel";
+const char *password = "12345678";
+const char *mqttBroker = "34.29.202.158";
+const int mqttPort = 1883;
+
+// Custom MQTT topics
+const char *bme680TopicTemp = "bme680/temp";
+const char *bme680TopicHum = "bme680/hum";
+const char *bme680TopicPress = "bme680/pres";
+const char *bme680TopicGas = "bme680/gas";
+const char *soilMoistureTopic = "soil/sensor1";
+const char *soilMoistureTopic2 = "soil/sensor2";
+const char *solarpowertopic="solar/power";
+const char *pumppowertopic="solar/pumppower";
+const char *dripperpowertopic="solar/dripperpower";
+
+// Variables for MQTT and WiFi
+WiFiClient espClient;
+PubSubClient mqttClient(espClient);
+
+// Variables to store received data
+int receivedID = 0;
+float receivedX = 0.0;
+float receivedY = 0.0;
+float receivedZ = 0.0;
+float receivedA = 0.0;
+
+// Function to connect to WiFi
+void connectToWiFi() {
+    Serial.print("Connecting to WiFi...");
+    WiFi.begin(ssid, password);
+    while (WiFi.status() != WL_CONNECTED) {
+        delay(1000);
+        Serial.print(".");
+    }
+    Serial.println("\nConnected to WiFi");
+}
+
+// Function to connect to MQTT broker
+void connectToMQTT() {
+    while (!mqttClient.connected()) {
+        Serial.print("Connecting to MQTT...");
+        if (mqttClient.connect("ESP32_Client")) { // No username/password
+            Serial.println("Connected to MQTT");
+        } else {
+            Serial.print("Failed, rc=");
+            Serial.print(mqttClient.state());
+            Serial.println(" Trying again in 5 seconds");
+            delay(5000);
+        }
+    }
+}
+
+// Function to parse received serial data
+void parseData(String data) {
+    if (data.startsWith("ID:")) {
+        int idIndex = data.indexOf("ID:") + 4;
+
+        if (data.indexOf("Temperature:") != -1) {
+            // BME680 Data
+            int tempIndex = data.indexOf("Temperature:");
+            int humidityIndex = data.indexOf("Humidity:");
+            int pressureIndex = data.indexOf("Pressure:");
+            int gasIndex = data.indexOf("Gas:");
+
+            receivedID = data.substring(idIndex, tempIndex).toInt();
+            receivedX = data.substring(tempIndex + 12, humidityIndex).toFloat(); // Temperature
+            receivedY = data.substring(humidityIndex + 9, pressureIndex).toFloat(); // Humidity
+            receivedZ = data.substring(pressureIndex + 9, gasIndex).toFloat(); // Pressure
+            receivedA = data.substring(gasIndex + 4).toFloat(); // Gas resistance
+
+        } else if (data.indexOf("Soil Moisture:") != -1) {
+            // Soil Moisture Data
+            int soilIndex = data.indexOf("Soil Moisture:");
+
+            receivedID = data.substring(idIndex, soilIndex).toInt();
+            receivedX = data.substring(soilIndex + 14).toFloat(); // Soil moisture
+            receivedY = 0.0; // No additional data for soil moisture
+            receivedZ = 0.0;
+            receivedA = 0.0;
+        } 
+        else if (data.indexOf("Solar Power:") != -1) {
+            // Soil Moisture Data
+            int solarIndex = data.indexOf("Solar Power:");
+            int pumpIndex = data.indexOf("Pump Power:");
+            int dripperIndex = data.indexOf("Dripper Power:");
+            
+            receivedID = data.substring(idIndex, solarIndex).toInt();
+            receivedX = data.substring(solarIndex + 14).toFloat(); // Soil moisture
+            receivedY =data.substring(pumpIndex + 14).toFloat(); // No additional data for soil moisture
+            receivedZ = data.substring(dripperIndex + 14).toFloat();
+            receivedA = 0.0;
+        }
+        
+        else {
+            Serial.println("Unknown data format");
+        }
+    }
+}
+
+// Function to publish data to MQTT
+void publishToMQTT() {
+    if (receivedID == 1) { // BME680 Data
+        mqttClient.publish(bme680TopicTemp, String(receivedX).c_str()); // Temperature
+        mqttClient.publish(bme680TopicHum, String(receivedY).c_str());  // Humidity
+        mqttClient.publish(bme680TopicPress, String(receivedZ).c_str()); // Pressure
+        mqttClient.publish(bme680TopicGas, String(receivedA).c_str());  // Gas resistance
+
+        Serial.println("Published BME680 Data to MQTT:");
+        Serial.printf("Temperature: %.2f °C\n", receivedX);
+        Serial.printf("Humidity: %.2f %%\n", receivedY);
+        Serial.printf("Pressure: %.2f hPa\n", receivedZ);
+        Serial.printf("Gas Resistance: %.2f kΩ\n", receivedA);
+    } else if (receivedID == 2) { // Soil Moisture Data
+        mqttClient.publish(soilMoistureTopic, String(receivedX).c_str()); // Soil Moisture
+
+        Serial.println("Published Soil Moisture Data to MQTT:");
+        Serial.printf("Soil Moisture: %.2f %%\n", receivedX);
+    }
+    else if (receivedID == 3) { // Soil Moisture2 Data
+        mqttClient.publish(soilMoistureTopic2, String(receivedX).c_str()); // Soil Moisture
+
+        Serial.println("Published Soil Moisture Data to MQTT:");
+        Serial.printf("Soil Moisture: %.2f %%\n", receivedX);
+    }
+    else if (receivedID == 4) { // Soil Moisture2 Data
+       mqttClient.publish(solarpowertopic, String(receivedX).c_str()); // Temperature
+        mqttClient.publish(pumppowertopic, String(receivedY).c_str());  // Humidity
+        mqttClient.publish(dripperpowertopic, String(receivedZ).c_str()); // Pressure
+       
+
+        Serial.println("Published Solar Data to MQTT:");
+        Serial.printf("Solar Power: %.2fW %%\n", receivedX);
+        Serial.printf("Pump Power: %.2fW %%\n", receivedY);
+        Serial.printf("Dripper Power: %.2fW %%\n", receivedZ);
+    }
+
+}
+
+void setup() {
+    // Initialize Serial for debugging
+    Serial.begin(115200);
+
+    // Initialize Serial2 for receiving data (TX2 = GPIO17, RX2 = GPIO16)
+    Serial2.begin(9600, SERIAL_8N1, 17, 16);
+
+    // Connect to WiFi
+    connectToWiFi();
+
+    // Configure MQTT
+    mqttClient.setServer(mqttBroker, mqttPort);
+
+    // Connect to MQTT
+    connectToMQTT();
+
+    Serial.println("Waiting for serial data...");
+}
+
+void loop() {
+    // Reconnect to MQTT if the connection is lost
+    if (!mqttClient.connected()) {
+        connectToMQTT();
+    }
+    mqttClient.loop();
+
+    // Check if data is available on Serial2
+    if (Serial2.available()) {
+        // Read the data as a string
+        String receivedData = Serial2.readStringUntil('\n');
+
+        // Debug: Print received data
+        Serial.println("Data received:");
+        Serial.println(receivedData);
+
+        // Parse the received data
+        parseData(receivedData);
+
+        // Publish the data to MQTT
+        publishToMQTT();
+    }
+}

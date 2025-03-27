@@ -1,0 +1,101 @@
+//Serial Sender code
+
+
+#include <esp_now.h>
+#include <WiFi.h>
+
+// Structure for incoming data
+typedef struct struct_message {
+    int id; // Unique ID for each sender
+    float x; // Solar Power or other data
+    float y; // Pump Power or other data
+    float z; // Dripper Power or other data
+    float a; // Reserved for future use
+} struct_message;
+
+// Create a struct_message instance for incoming data
+struct_message myData;
+
+// Create structures to store data from various sources
+struct_message bmeData;
+struct_message soilMoistureData;
+struct_message soilMoistureData2;
+struct_message solarData;
+
+// Callback function for received data
+void OnDataRecv(const uint8_t *mac_addr, const uint8_t *incomingData, int len) {
+    Serial.println("Data received!");
+
+    // Copy received data into myData
+    memcpy(&myData, incomingData, sizeof(myData));
+
+    // Identify sender by ID and print data
+    if (myData.id == 1) {
+        bmeData = myData;  // Store BME680 data
+        Serial.println("BME680 Data:");
+        Serial.printf("Temperature: %.2f °C\n", bmeData.x);
+        Serial.printf("Humidity: %.2f %%\n", bmeData.y);
+        Serial.printf("Pressure: %.2f hPa\n", bmeData.z);
+        Serial.printf("Gas Resistance: %.2f kΩ\n", bmeData.a);
+
+        // Forward data via Serial
+        Serial2.printf("ID: %d, Temperature: %.2f, Humidity: %.2f, Pressure: %.2f, Gas: %.2f\n", 
+                        bmeData.id, bmeData.x, bmeData.y, bmeData.z, bmeData.a);
+                   delay(1200);
+    } else if (myData.id == 2) {
+        soilMoistureData = myData;  // Store soil moisture data
+        Serial.println("Soil Moisture Data 1:");
+        Serial.printf("Soil Moisture: %.2f %%\n", soilMoistureData.x);
+
+        // Forward data via Serial
+        Serial2.printf("ID: %d, Soil Moisture: %.2f\n", soilMoistureData.id, soilMoistureData.x);
+        delay(1200);
+    } else if (myData.id == 3) {
+        soilMoistureData2 = myData;  // Store soil moisture data
+        Serial.println("Soil Moisture Data 2:");
+        Serial.printf("Soil Moisture: %.2f %%\n", soilMoistureData2.x);
+
+        // Forward data via Serial
+        Serial2.printf("ID: %d, Soil Moisture: %.2f\n", soilMoistureData2.id, soilMoistureData2.x);
+         delay(1200);
+    }
+    else if (myData.id == 4) {
+        // Data from Solar, Pump, and Dripper
+        solarData = myData; // Store solar, pump, and dripper data
+        Serial.println("Solar, Pump, and Dripper Data:");
+        Serial.printf("Solar Power: %.2f W\n", solarData.x);
+        Serial.printf("Pump Power: %.2f W\n", solarData.y);
+        Serial.printf("Dripper Power: %.2f W\n", solarData.z);
+                Serial2.printf("ID: %d, Solar Power: %.2f W\n, Pump Power: %.2f W\n, Dripper Power: %.2f W\n  ", solarData.id, solarData.x, solarData.y, solarData.z);
+
+        delay(1200);
+    } else {
+        Serial.println("Unknown data received.");
+    }
+
+    Serial.println();
+    Serial.println("---------------------------------------");
+}
+
+void setup() {
+    // Initialize Serial Monitor
+    Serial.begin(115200);
+
+Serial1.begin(9600, SERIAL_8N1, 17, 16);
+    // Set device as a Wi-Fi Station
+    WiFi.mode(WIFI_STA);
+
+    // Initialize ESP-NOW
+    if (esp_now_init() != ESP_OK) {
+        Serial.println("Error initializing ESP-NOW");
+        return;
+    }
+
+    // Register the receive callback
+    esp_now_register_recv_cb(OnDataRecv);
+}
+
+void loop() {
+    // You can process or display data here if needed
+    delay(2000);
+}
